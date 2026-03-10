@@ -1,0 +1,63 @@
+{
+  "@@locale": "ne",
+  "appTitle": "हाम्रोओज",
+  "settings": "सेटिङहरू",
+  "notifications": "सूचनाहरू",
+  "privacy": "गोपनीयता",
+  "appPreferences": "ऐप प्राथमिकताहरू",
+  "theme": "थिम",
+  "language": "भाषा",
+  "autoDownloadImages": "छविहरू स्वचालित डाउनलोड",
+  "clearCache": "क्यास मेट्नुहोस्",
+  "clearCacheConfirm": "यसले सबै क्यास गरिएको छविहरू र डेटा मेट्छ। जारी राख्ने?",
+  "adzunaApi": "Adzuna API (Jobs)",
+  "save": "सुरक्षित गर्नुहोस्",
+  "clear": "मेटाउनुहोस्",
+  "exportData": "मेरो डेटा निर्यात गर्नुहोस्",
+  "deleteAccount": "खाता मेटाउनुहोस्",
+  "aboutApp": "एप बारे",
+  "termsOfService": "सेवाको सर्तहरू",
+  "privacyPolicy": "गोपनीयता नीति",
+  "helpSupport": "सहायता र समर्थन",
+  "version": "संस्करण",
+  "light": "प्रकाश",
+  "dark": "अँध्यारो",
+  "systemDefault": "प्रणाली पूर्वनिर्धारित",
+  "english": "English",
+  "nepali": "नेपाली (Nepali)",
+  "themeChanged": "थिम {themeName} मा परिवर्तन भयो",
+  "languageChanged": "भाषा {languageName} मा परिवर्तन भयो",
+  "tooManyFailedLoginAttempts": "धेरै लाग्नाले लगइन प्रयास असफल भए। कृपया {minutes} मिनेट पछि पुन: प्रयास गर्नुहोस्।",
+  "passwordResetSent": "पासवर्ड रिसेट लिंक तपाइँको ईमेलमा पठाइयो",
+  "welcomeBack": "फिरि स्वागत छ, {name}!",
+  "loginError": "लगइन त्रुटि: {error}",
+  "invalidCredentials": "अमान्य इमेल वा पासवर्ड",
+  "welcome": "स्वागत छ, {name}!",
+  "googleSignInFailed": "Google साइन-इन असफल भयो वा रद्द गरियो",
+  "appleSignInFailed": "Apple साइन-इन असफल भयो वा रद्द गरियो",
+  "signIn": "साइन इन",
+  "newUser": "नयाँ प्रयोगकर्ता?",
+  "createAccount": "खाता बनाउनुहोस्",
+  "or": "वा",
+  "continueWithGoogle": "Google मार्फत जारी राख्नुहोस्",
+  "continueWithApple": "Apple मार्फत जारी राख्नुहोस्",
+  "pleaseAgreeTerms": "कृपया नियम र सर्तहरूमा सहमति दिनुहोस्",
+  "registrationSuccess": "दर्ता सफल भयो! कृपया लगइन गर्नुहोस्।",
+  "emailAlreadyRegistered": "ईमेल पहिले नै दर्ता गरिएको छ। कृपया लगइन गर्नुहोस्।",
+  "emailLabel": "इमेल ठेगाना *",
+  "emailHint": "tapai.nam@email.com",
+  "passwordLabel": "पासवर्ड *",
+  "passwordHint": "आफ्नो पासवर्ड प्रविष्ट गर्नुहोस्",
+  "passwordTooShort": "पासवर्ड कम्तिमा {min} अक्षर हुनुपर्छ",
+
+  "@themeChanged": {
+    "placeholders": {
+      "themeName": {}
+    }
+  },
+  "@languageChanged": {
+    "placeholders": {
+      "languageName": {}
+    }
+  }
+}

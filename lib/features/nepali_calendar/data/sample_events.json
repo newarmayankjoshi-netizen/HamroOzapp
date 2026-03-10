@@ -1,0 +1,10 @@
+[
+  {
+    "id": "sample1",
+    "title": "Sample Event",
+    "date": "2083-01-01",
+    "description": "This is a sample event used to satisfy asset bundling.",
+    "location": "Kathmandu",
+    "metadata": {}
+  }
+]

@@ -1,0 +1,22 @@
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Verification images stored at: verification/{userId}/{filename}
+    match /verification/{userId}/{allPaths=**} {
+      // Allow authenticated owner to upload their own files
+      allow write: if request.auth != null && request.auth.uid == userId;
+
+      // Allow owner and admins/verifiers (via custom claims) to read
+      allow read: if request.auth != null && (
+        request.auth.uid == userId ||
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'Admin' ||
+        request.auth.token.role == 'Verifier'
+      );
+    }
+
+    // Deny all other storage access by default
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

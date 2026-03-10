@@ -1,0 +1,52 @@
+name: macos-build-with-cache
+
+on:
+  push:
+    branches: [ main, macos-fixes ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Cache Flutter pub and pub-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ${{ env.FLUTTER_HOME }}/bin/cache
+          key: ${{ runner.os }}-flutter-pub-${{ hashFiles('**/pubspec.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-pub-
+
+      - name: Cache CocoaPods repos and DerivedData
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/CocoaPods
+            ~/Library/Developer/Xcode/DerivedData
+            macos/Pods
+          key: ${{ runner.os }}-pods-${{ hashFiles('macos/Podfile.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-pods-
+
+      - name: Install dependencies
+        run: |
+          flutter pub get
+          chmod +x scripts/pod_install_unset_dart_defines.sh
+          scripts/pod_install_unset_dart_defines.sh
+
+      - name: Build macOS (debug) for fast CI iteration
+        run: flutter build macos --debug
+
+      - name: Optionally build release (uncomment to enable)
+        if: false
+        run: flutter build macos --release

@@ -1,0 +1,2835 @@
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:io';
+import 'dart:async';
+import 'auth_page.dart';
+import 'jobs_page.dart';
+import 'marketplace_page.dart';
+import 'rooms_page.dart';
+import 'services/user_stats_service.dart';
+import 'services/security_service.dart';
+import 'services/notification_service.dart';
+import 'settings_page.dart';
+import 'user_chat_page.dart';
+import 'verify_identity_page.dart';
+import 'edit_profile_page.dart';
+import 'bookmarks_page.dart';
+import 'help_support_page.dart';
+
+class ProfilePage extends StatefulWidget {
+  final String? profileUserId;
+  final String? displayNameOverride;
+
+  const ProfilePage({super.key, this.profileUserId, this.displayNameOverride});
+
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class UserReviewsPage extends StatelessWidget {
+  final String userId;
+  final String displayName;
+
+  const UserReviewsPage({
+    super.key,
+    required this.userId,
+    required this.displayName,
+  });
+
+  static DateTime _readCreatedAt(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  static int? _readRating(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    if (Firebase.apps.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Reviews')),
+        body: const Center(child: Text('Reviews are not available offline.')),
+      );
+    }
+
+    final query = FirebaseFirestore.instance
+        .collection('user_reviews')
+        .where('targetUserId', isEqualTo: userId);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Reviews')),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: query.snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Text(
+                'Failed to load reviews.',
+                style: theme.textTheme.bodyMedium,
+              ),
+            );
+          }
+
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          final docs = snapshot.data?.docs ?? const [];
+          final reviews =
+              docs
+                  .map((d) {
+                    final data = d.data();
+                    final rating = _readRating(data['rating']);
+                    final createdAt = _readCreatedAt(data['createdAt']);
+                    final comment = (data['comment'] ?? '').toString();
+                    final reviewerUserId = (data['reviewerUserId'] ?? '')
+                        .toString();
+                    return (
+                      rating: rating,
+                      createdAt: createdAt,
+                      comment: comment,
+                      reviewerUserId: reviewerUserId,
+                    );
+                  })
+                  .where((r) => r.rating != null)
+                  .toList(growable: false)
+                ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+          final ratingValues = reviews
+              .map((r) => r.rating)
+              .whereType<int>()
+              .where((v) => v >= 1 && v <= 5)
+              .toList(growable: false);
+
+          final count = ratingValues.length;
+          final average = count == 0
+              ? null
+              : ratingValues.reduce((a, b) => a + b) / count;
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.star, color: Color(0xFFF59E0B)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          average == null
+                              ? 'No reviews yet'
+                              : '${average.toStringAsFixed(1)} ($count reviews)',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (reviews.isEmpty)
+                const Center(child: Text('No reviews yet.'))
+              else
+                ...reviews.map((r) {
+                  final reviewerName =
+                      AuthService.getUserById(r.reviewerUserId)?.name ??
+                      'Community member';
+
+                  final stars = List.generate(5, (i) {
+                    final filled = (r.rating ?? 0) >= (i + 1);
+                    return Icon(
+                      filled ? Icons.star : Icons.star_border,
+                      size: 16,
+                      color: filled
+                          ? const Color(0xFFF59E0B)
+                          : const Color(0xFF9CA3AF),
+                    );
+                  });
+
+                  final date =
+                      '${r.createdAt.day.toString().padLeft(2, '0')}/${r.createdAt.month.toString().padLeft(2, '0')}/${r.createdAt.year}';
+
+                  return Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  reviewerName,
+                                  style: theme.textTheme.titleSmall?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                date,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: const Color(0xFF6B7280),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(children: stars),
+                          if (r.comment.trim().isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              r.comment.trim(),
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                height: 1.4,
+                                color: const Color(0xFF374151),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  final bool _isLoading = false;
+  String? _errorMessage;
+  String? _successMessage;
+  bool _showContributorCongrats = false;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
+  _idSubmissionListener;
+  String? _latestSubmissionStatus;
+  String? _latestSubmissionReviewReason;
+  String? _previousSubmissionStatus;
+
+  // Profile user ID (can be different from current user for viewing other profiles)
+  late final String? _profileUserId;
+  late final bool _isSelf;
+
+  // Australian states and territories (unused here; state selection moved to EditProfilePage)
+
+  // Common languages (moved to EditProfilePage)
+
+  // Form controllers
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _bioController = TextEditingController();
+  final _locationController = TextEditingController();
+  List<String> _badges = [];
+
+  // Image picker moved to EditProfilePage
+  final _securityService = SecurityService();
+
+  // In-app password change removed; using password-reset email flow instead.
+
+  User? _currentUser;
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> _reviewsStream(String userId) {
+    return FirebaseFirestore.instance
+        .collection('user_reviews')
+        .where('targetUserId', isEqualTo: userId)
+        .snapshots();
+  }
+
+  ({double? average, int count}) _computeRatingSummary(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    if (docs.isEmpty) return (average: null, count: 0);
+    var sum = 0;
+    var count = 0;
+    for (final d in docs) {
+      final data = d.data();
+      final v = data['rating'];
+      final r = (v is int)
+          ? v
+          : (v is num)
+          ? v.toInt()
+          : int.tryParse(v?.toString() ?? '');
+      if (r == null) continue;
+      if (r < 1 || r > 5) continue;
+      sum += r;
+      count += 1;
+    }
+    if (count == 0) return (average: null, count: 0);
+    return (average: sum / count, count: count);
+  }
+
+  void _openReviews() {
+    final user = _currentUser;
+    final userId = _profileUserId!;
+    if (user == null) return;
+
+    if (Firebase.apps.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Reviews are not available offline')),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserReviewsPage(userId: userId, displayName: user.name),
+      ),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _profileUserId = widget.profileUserId ?? AuthState.currentUserId;
+    _isSelf = _profileUserId == AuthState.currentUserId;
+    _loadUserData();
+  }
+
+  void _loadUserData() {
+    final userId = _profileUserId;
+    if (userId != null) {
+      final user = AuthService.getUserById(userId);
+      if (user == null) {
+        // User not found in local cache, create a minimal user object
+        // This can happen when viewing seller profiles from marketplace items
+        final minimalUser = User(
+          id: userId,
+          email: 'unknown@example.com', // Placeholder email for unknown users
+          passwordHash: '', // Empty password hash for unknown users
+          name: widget.displayNameOverride ?? 'Unknown User',
+          phone: null,
+          bio: null,
+          location: null,
+          role: 'User',
+          badges: [],
+          showPhone: false,
+          showEmail: false,
+          state: null,
+          birthday: null,
+          profilePicture: null,
+          languages: null,
+          createdAt: DateTime.now(),
+        );
+        setState(() {
+          _currentUser = minimalUser;
+          _nameController.text = minimalUser.name;
+          _phoneController.text = minimalUser.phone ?? '';
+          _bioController.text = minimalUser.bio ?? '';
+          _locationController.text = minimalUser.location ?? '';
+          _badges = List<String>.from(minimalUser.badges);
+        });
+        return;
+      }
+      final resolvedUser = user;
+
+      setState(() {
+        _currentUser = resolvedUser;
+        _nameController.text = resolvedUser.name;
+        _phoneController.text = resolvedUser.phone ?? '';
+        _bioController.text = resolvedUser.bio ?? '';
+        _locationController.text = resolvedUser.location ?? '';
+        _badges = List<String>.from(resolvedUser.badges);
+      });
+      // Check authoritative contributor level / verified badge in Firestore
+      if (Firebase.apps.isNotEmpty) {
+        FirebaseFirestore.instance
+            .collection('users')
+            .doc(userId)
+            .get()
+            .then((snap) {
+              if (!snap.exists) return;
+              final data = snap.data() ?? {};
+              final level = (data['contributorLevel'] ?? 0) is int
+                  ? (data['contributorLevel'] ?? 0) as int
+                  : int.tryParse(
+                          (data['contributorLevel'] ?? '0').toString(),
+                        ) ??
+                        0;
+              final verified = (data['verifiedBadge'] ?? false) as bool;
+              if ((level >= 2) || verified) {
+                if (!mounted) return;
+                setState(() {
+                  _showContributorCongrats = true;
+                });
+              }
+
+              // Auto-assign 'trusted' badge client-side when basic criteria met.
+              // Criteria: account age >= 30 days AND at least 3 reviews received.
+              // This attempts an idempotent `arrayUnion` write; if Firestore rules
+              // prevent the write the failure is ignored and the UI keeps showing
+              // progress information.
+              if (_isSelf) {
+                Future.microtask(() async {
+                  try {
+                    final createdRaw = data['createdAt'];
+                    DateTime? createdAt;
+                    if (createdRaw is Timestamp) {
+                      createdAt = createdRaw.toDate();
+                    } else if (createdRaw is DateTime) {
+                      createdAt = createdRaw;
+                    }
+                    // Fallback: if resolved user object has createdAt, use that
+                    if (createdAt == null) {
+                      try {
+                        createdAt = _currentUser?.createdAt;
+                      } catch (_) {}
+                    }
+                    if (createdAt == null) return;
+                    final accountAgeDays = DateTime.now()
+                        .difference(createdAt)
+                        .inDays;
+                    if (accountAgeDays < 30) return;
+
+                    final reviewsSnap = await FirebaseFirestore.instance
+                        .collection('user_reviews')
+                        .where('targetUserId', isEqualTo: userId)
+                        .get();
+                    final reviewCount = reviewsSnap.docs.length;
+                    if (reviewCount < 3) return;
+
+                    // If criteria met and user doesn't already have trusted badge, add it.
+                    final badgesRaw = data['badges'];
+                    final hasTrusted =
+                        badgesRaw is List && badgesRaw.contains('trusted') ||
+                        _badges.contains('trusted');
+                    if (!hasTrusted) {
+                      await FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(userId)
+                          .set({
+                            'badges': FieldValue.arrayUnion(['trusted']),
+                            'trustedAt': FieldValue.serverTimestamp(),
+                          }, SetOptions(merge: true));
+                      if (!mounted) return;
+                      setState(() {
+                        if (!_badges.contains('trusted'))
+                          _badges.add('trusted');
+                      });
+                      if (mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Congratulations — you are now Trusted!',
+                            ),
+                          ),
+                        );
+                    }
+                  } catch (_) {
+                    // ignore failures (rules may prevent client-side badge writes)
+                  }
+                });
+              }
+            })
+            .catchError((_) {});
+
+        // Listen for the latest id_submissions document for this user so
+        // we can show pending/rejected messages and disable repeat submissions.
+        try {
+          final q = FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .collection('id_submissions')
+              .orderBy('createdAt', descending: true)
+              .limit(1);
+          _idSubmissionListener?.cancel();
+          _idSubmissionListener = q.snapshots().listen((snap) {
+            if (!mounted) return;
+            if (snap.docs.isEmpty) {
+              setState(() {
+                _latestSubmissionStatus = null;
+                _latestSubmissionReviewReason = null;
+              });
+              return;
+            }
+            final doc = snap.docs.first;
+            final data = doc.data();
+            final newStatus = (data['status'] as String?);
+            final newReason = (data['reviewReason'] as String?);
+
+            // If status changed and this is the current user's profile,
+            // surface a notification for approved / rejected transitions.
+            final shouldNotify =
+                _isSelf &&
+                _previousSubmissionStatus != null &&
+                _previousSubmissionStatus != newStatus;
+
+            if (shouldNotify &&
+                (newStatus == 'approved' ||
+                    newStatus == 'rejected' ||
+                    newStatus == 'auto_rejected')) {
+              final title = newStatus == 'approved'
+                  ? 'Verification approved'
+                  : 'Verification rejected';
+              final body = (newStatus == 'approved')
+                  ? 'Your identity verification has been approved. Thank you!'
+                  : 'Your identity verification was rejected${newReason != null && newReason.trim().isNotEmpty ? ': $newReason' : '.'}';
+
+              // Show an in-app SnackBar and a dialog so the user notices the change.
+              if (mounted) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(body)));
+                // Also show a system/local notification so the user receives
+                // the update when the app is in background or not focused.
+                NotificationService().showNotification(
+                  title: title,
+                  body: body,
+                );
+                showDialog<void>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: Text(title),
+                    content: Text(body),
+                    actions: [
+                      FilledButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        child: const Text('OK'),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.bookmark_outline),
+                        title: const Text('Bookmarks'),
+                        onTap: () async {
+                          Navigator.of(ctx).pop();
+                          await Future<void>.delayed(
+                            const Duration(milliseconds: 50),
+                          );
+                          if (!mounted) return;
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const BookmarksPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              }
+            }
+
+            setState(() {
+              _previousSubmissionStatus = _latestSubmissionStatus;
+              _latestSubmissionStatus = newStatus;
+              _latestSubmissionReviewReason = newReason;
+            });
+          });
+        } catch (_) {}
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _idSubmissionListener?.cancel();
+    _nameController.dispose();
+    _phoneController.dispose();
+    _bioController.dispose();
+    _locationController.dispose();
+    // password controllers removed
+    super.dispose();
+  }
+
+  // Password reset functionality moved to `SettingsPage`.
+
+  // Profile picture picker moved to EditProfilePage; kept out of this view to avoid duplicate code.
+
+  // Language selection UI moved to EditProfilePage; this helper is no longer used here.
+
+  @override
+  Widget build(BuildContext context) {
+    if (_currentUser == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Profile')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final theme = Theme.of(context);
+    final isOAuthUser = _currentUser!.passwordHash.isEmpty;
+
+    final profileUserId = _profileUserId;
+    final canLoadReviews = profileUserId != null && Firebase.apps.isNotEmpty;
+
+    Widget buildPublicCard({double? rating, int? ratingCount}) {
+      return _UserCardPublicView(
+        user: _currentUser!,
+        theme: theme,
+        rating: rating,
+        ratingCount: ratingCount,
+        onTapRating: _openReviews,
+        onMessage: _messageUser,
+        onCall: _makeCall,
+        onProvideReview: _provideReview,
+        onViewListings: () => _showListingsSheet(context, isSelf: false),
+        onReport: () => _reportUser(context),
+      );
+    }
+
+    if (!_isSelf) {
+      if (!canLoadReviews) {
+        return buildPublicCard(
+          rating: _currentUser!.rating,
+          ratingCount: _currentUser!.ratingCount,
+        );
+      }
+
+      return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: _reviewsStream(profileUserId),
+        builder: (context, snapshot) {
+          final docs = snapshot.data?.docs ?? const [];
+          final summary = _computeRatingSummary(docs);
+          return buildPublicCard(
+            rating: summary.average,
+            ratingCount: summary.count,
+          );
+        },
+      );
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Profile'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () async {
+              // Navigate to full-screen edit page
+              final res = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(builder: (_) => const EditProfilePage()),
+              );
+              // If the edit page saved changes, reload the user data
+              if (res == true) _loadUserData();
+            },
+            tooltip: 'Edit Profile',
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (_isLoading)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 12.0),
+                  child: LinearProgressIndicator(),
+                ),
+              if (Firebase.apps.isEmpty)
+                _SelfHeader(
+                  user: _currentUser!,
+                  theme: theme,
+                  badges: _badges,
+                  rating: _currentUser!.rating,
+                  ratingCount: _currentUser!.ratingCount,
+                  onTapRating: _openReviews,
+                  joinedAt: _currentUser!.createdAt,
+                  statsFuture: UserStatsService.tryLoad(_currentUser!.id),
+                )
+              else
+                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _reviewsStream(_currentUser!.id),
+                  builder: (context, snapshot) {
+                    final docs = snapshot.data?.docs ?? const [];
+                    final summary = _computeRatingSummary(docs);
+                    return _SelfHeader(
+                      user: _currentUser!,
+                      theme: theme,
+                      badges: _badges,
+                      rating: summary.average,
+                      ratingCount: summary.count,
+                      onTapRating: _openReviews,
+                      joinedAt: _currentUser!.createdAt,
+                      statsFuture: UserStatsService.tryLoad(_currentUser!.id),
+                    );
+                  },
+                ),
+              const SizedBox(height: 16),
+
+              if (_showContributorCongrats && _isSelf)
+                Card(
+                  color: Colors.green.shade50,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.celebration, color: Color(0xFF065F46)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Congratulations! You are now a Contributor. Together, we can create a stronger, more supportive, and better-connected Nepalese community across Australia.',
+                            style: TextStyle(color: Colors.green.shade900),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Dismiss',
+                          icon: Icon(Icons.close, color: Colors.green.shade900),
+                          onPressed: () =>
+                              setState(() => _showContributorCongrats = false),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+              // Become a Contributor (only show if not already approved)
+              if (!(_showContributorCongrats ||
+                  _latestSubmissionStatus == 'approved'))
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 8),
+                  child: Card(
+                    elevation: 0,
+                    color: Colors.grey.shade100,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: _latestSubmissionStatus == 'pending'
+                          ? null
+                          : () async {
+                              await showModalBottomSheet<void>(
+                                context: context,
+                                showDragHandle: true,
+                                builder: (ctx) => const VerifyIdentityPage(),
+                              );
+                              _loadUserData();
+                            },
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 64,
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Icons.volunteer_activism,
+                                size: 32,
+                                color: Colors.deepOrange,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Become a Contributor',
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Help build our community and unlock special features.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+
+              // Menu-style list items
+              Card(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.settings_outlined),
+                      title: const Text('Account settings'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const SettingsPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.person_outline),
+                      title: const Text('View profile'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () async {
+                        final res = await Navigator.push<bool>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const EditProfilePage(),
+                          ),
+                        );
+                        if (res == true) _loadUserData();
+                      },
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.privacy_tip_outlined),
+                      title: const Text('Privacy'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const SettingsPage(),
+                          ),
+                        );
+                      },
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.help_outline),
+                      title: const Text('Get help'),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const HelpSupportPage(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+
+              // View My Listings button
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: ListTile(
+                  leading: const Icon(Icons.list_alt_outlined),
+                  title: const Text('View my listings'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => _showListingsSheet(context, isSelf: true),
+                ),
+              ),
+
+              // Show submission status messages for the current user
+              if (_isSelf && !_showContributorCongrats)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12.0, bottom: 12.0),
+                  child: () {
+                    if (_latestSubmissionStatus == 'pending') {
+                      return Card(
+                        color: Colors.amber.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.hourglass_top,
+                                color: Color(0xFF92400E),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Your request is being reviewed by admin',
+                                  style: TextStyle(
+                                    color: Colors.amber.shade900,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
+                    if (_latestSubmissionStatus == 'rejected' ||
+                        _latestSubmissionStatus == 'auto_rejected') {
+                      final reason = (_latestSubmissionReviewReason ?? '')
+                          .trim();
+                      return Card(
+                        color: Colors.red.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.error_outline,
+                                    color: Color(0xFF991B1B),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      'Your request was rejected, tap Become a contributor button to send request again.',
+                                      style: TextStyle(
+                                        color: Colors.red.shade900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (reason.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Reason: $reason',
+                                  style: TextStyle(color: Colors.red.shade700),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
+                    return const SizedBox.shrink();
+                  }(),
+                ),
+
+              const SizedBox(height: 22),
+
+              // OAuth Badge
+              if (isOAuthUser)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.verified_user,
+                        size: 16,
+                        color: Colors.blue.shade700,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'OAuth Account',
+                        style: TextStyle(
+                          color: Colors.blue.shade700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 24),
+
+              // Inline profile form removed; edits happen in EditProfilePage.
+
+              // Error/Success Messages
+              if (_errorMessage != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.red.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.error_outline, color: Colors.red.shade700),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _errorMessage!,
+                          style: TextStyle(color: Colors.red.shade700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              if (_successMessage != null)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        color: Colors.green.shade700,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _successMessage!,
+                          style: TextStyle(color: Colors.green.shade700),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // Profile form removed — edits happen on EditProfilePage
+              const SizedBox(height: 16),
+
+              // Profile actions moved to Settings or EditProfilePage
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Profile field builder consolidated into EditProfilePage; removed to avoid duplication.
+
+  // Date formatting helper moved/unused; use helpers from EditProfilePage or shared util if needed.
+
+  Future<void> _makeCall() async {
+    final user = _currentUser;
+    if (user == null) return;
+    if (!user.showPhone || user.phone == null || user.phone!.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Phone number not available')),
+        );
+      }
+      return;
+    }
+
+    final phoneNumber = user.phone!.replaceAll(RegExp(r'[^\d+]'), '');
+    final Uri phoneUri = Uri(scheme: 'tel', path: phoneNumber);
+    try {
+      // ignore: deprecated_member_use
+      if (await canLaunchUrl(phoneUri)) {
+        // ignore: deprecated_member_use
+        await launchUrl(phoneUri);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch phone call')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not launch phone call')),
+        );
+      }
+    }
+  }
+
+  Future<void> _messageUser() async {
+    final user = _currentUser;
+    if (user == null) return;
+
+    final currentUserId = AuthState.currentUserId;
+    if (currentUserId == null) return;
+
+    // Don't allow messaging yourself
+    if (currentUserId == user.id) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You cannot message yourself')),
+        );
+      }
+      return;
+    }
+
+    final canSms = user.showPhone && (user.phone ?? '').trim().isNotEmpty;
+    final canEmail = user.showEmail && (user.email).trim().isNotEmpty;
+
+    final publicName = (user.name.trim().split(' ').firstOrNull ?? user.name)
+        .trim();
+    final message =
+        'Hi ${publicName.isEmpty ? 'there' : publicName}, I saw your profile on Nepalese in Australia. Is it ok to chat?';
+
+    // If only one external option is available, open chat directly
+    if (!canSms && !canEmail) {
+      _openChatWithUser(user.id, user.name);
+      return;
+    }
+
+    if (canSms && !canEmail) {
+      await _launchSms(user.phone!, message);
+      return;
+    }
+    if (!canSms && canEmail) {
+      await _launchEmail(user.email, subject: 'Hello', body: message);
+      return;
+    }
+
+    // Show options including in-app messaging
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Message ${publicName.isEmpty ? 'User' : publicName}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ListTile(
+                  leading: const Icon(Icons.chat_bubble_outline),
+                  title: const Text('In-App Message'),
+                  subtitle: const Text('Start a conversation within the app'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _openChatWithUser(user.id, user.name);
+                  },
+                ),
+                if (canSms)
+                  ListTile(
+                    leading: const Icon(Icons.sms_outlined),
+                    title: const Text('SMS'),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _launchSms(user.phone!, message);
+                    },
+                  ),
+                if (canEmail)
+                  ListTile(
+                    leading: const Icon(Icons.email_outlined),
+                    title: const Text('Email'),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _launchEmail(user.email, subject: 'Hello', body: message);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _launchSms(String phone, String body) async {
+    final cleanedNumber = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    final uri = Uri(
+      scheme: 'sms',
+      path: cleanedNumber,
+      queryParameters: <String, String>{'body': body},
+    );
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open messaging app')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open messaging app')),
+        );
+      }
+    }
+  }
+
+  Future<void> _launchEmail(
+    String email, {
+    required String subject,
+    required String body,
+  }) async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: email,
+      queryParameters: <String, String>{'subject': subject, 'body': body},
+    );
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open email app')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open email app')),
+        );
+      }
+    }
+  }
+
+  void _openChatWithUser(String userId, String userName) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            UserChatPage(otherUserId: userId, otherUserName: userName),
+      ),
+    );
+  }
+
+  Future<void> _provideReview() async {
+    final user = _currentUser;
+    final reviewerId = AuthState.currentUserId;
+    if (user == null) return;
+    if (reviewerId == null || reviewerId.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please login to provide a review')),
+        );
+      }
+      return;
+    }
+    if (reviewerId == user.id) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('You cannot review yourself')),
+        );
+      }
+      return;
+    }
+
+    final commentController = TextEditingController();
+    var rating = 0;
+
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              scrollable: true,
+              title: const Text('Provide review'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Rating'),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: List.generate(5, (index) {
+                      final value = index + 1;
+                      final selected = value <= rating;
+                      return IconButton(
+                        tooltip: '$value star${value == 1 ? '' : 's'}',
+                        onPressed: () => setDialogState(() => rating = value),
+                        icon: Icon(
+                          selected ? Icons.star : Icons.star_border,
+                          color: selected
+                              ? const Color(0xFFF59E0B)
+                              : const Color(0xFF9CA3AF),
+                        ),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: commentController,
+                    maxLines: 3,
+                    maxLength: 240,
+                    decoration: const InputDecoration(
+                      labelText: 'Comment (optional)',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              actions: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: rating == 0
+                            ? null
+                            : () => Navigator.pop(dialogContext, true),
+                        child: Text(
+                          rating == 0 ? 'Submit' : 'Submit ($rating★)',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    final rawComment = commentController.text;
+    commentController.dispose();
+    if (submitted != true) return;
+
+    final sanitizedComment = _securityService.sanitizeInput(
+      rawComment,
+      maxLength: 240,
+    );
+    if (_securityService.containsProhibitedContent(sanitizedComment)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Comment contains prohibited content')),
+        );
+      }
+      return;
+    }
+
+    final oldAvg = user.rating ?? 0.0;
+    final oldCount = user.ratingCount ?? 0;
+    final newCount = oldCount + 1;
+    final newAvg = ((oldAvg * oldCount) + rating) / newCount;
+
+    _updateUserAggregatesInMemory(user, newAvg, newCount);
+
+    if (mounted) {
+      setState(() {
+        _currentUser = User(
+          id: user.id,
+          email: user.email,
+          passwordHash: user.passwordHash,
+          name: user.name,
+          phone: user.phone,
+          state: user.state,
+          location: user.location,
+          role: user.role,
+          birthday: user.birthday,
+          profilePicture: user.profilePicture,
+          bio: user.bio,
+          languages: user.languages,
+          badges: user.badges,
+          rating: newAvg,
+          ratingCount: newCount,
+          showPhone: user.showPhone,
+          showEmail: user.showEmail,
+          createdAt: user.createdAt,
+        );
+      });
+    }
+
+    if (Firebase.apps.isNotEmpty) {
+      try {
+        await FirebaseFirestore.instance.collection('user_reviews').add({
+          'targetUserId': user.id,
+          'reviewerUserId': reviewerId,
+          'rating': rating,
+          'comment': sanitizedComment,
+          'createdAt': Timestamp.now(),
+        });
+      } catch (_) {
+        // Best-effort.
+      }
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Review submitted. Thank you!')),
+      );
+    }
+  }
+
+  void _updateUserAggregatesInMemory(
+    User user,
+    double rating,
+    int ratingCount,
+  ) {
+    AuthService.upsertUser(
+      User(
+        id: user.id,
+        email: user.email,
+        passwordHash: user.passwordHash,
+        name: user.name,
+        phone: user.phone,
+        state: user.state,
+        location: user.location,
+        role: user.role,
+        birthday: user.birthday,
+        profilePicture: user.profilePicture,
+        bio: user.bio,
+        languages: user.languages,
+        badges: user.badges,
+        rating: rating,
+        ratingCount: ratingCount,
+        showPhone: user.showPhone,
+        showEmail: user.showEmail,
+        createdAt: user.createdAt,
+      ),
+    );
+  }
+
+  Future<void> _showListingsSheet(
+    BuildContext context, {
+    required bool isSelf,
+  }) async {
+    final profileUserId = _profileUserId;
+    final statsFuture = (profileUserId == null)
+        ? Future<UserStats?>.value(null)
+        : UserStatsService.tryLoad(profileUserId);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) {
+        Future<void> closeAndNavigate(Widget page) async {
+          Navigator.pop(context);
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          if (!mounted) return;
+          await Navigator.push(
+            this.context,
+            MaterialPageRoute(builder: (_) => page),
+          );
+        }
+
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isSelf ? 'My Listings' : 'Listings',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  isSelf
+                      ? 'Only shows listings posted by you.'
+                      : 'Only shows listings posted by this user.',
+                ),
+                const SizedBox(height: 14),
+                FutureBuilder<UserStats?>(
+                  future: statsFuture,
+                  builder: (context, snapshot) {
+                    final stats = snapshot.data;
+                    final roomsCount = stats?.roomsPosted;
+                    final jobsCount = stats?.jobsPosted;
+                    // Removed unused variable 'eventsCount'
+                    final itemsCount = stats?.itemsForSale;
+                    final itemsSoldCount = stats?.itemsSold;
+
+                    String fmt(int? v) => v == null ? '—' : v.toString();
+
+                    Widget trailingCount(String text) => Text(
+                      text,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    );
+
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.home_outlined),
+                          title: const Text('Rooms'),
+                          trailing: trailingCount(fmt(roomsCount)),
+                          onTap: () {
+                            if (profileUserId == null ||
+                                profileUserId.isEmpty) {
+                              closeAndNavigate(const RoomsPage());
+                              return;
+                            }
+                            closeAndNavigate(
+                              RoomsPage(
+                                filterUserId: profileUserId,
+                                titleOverride: isSelf ? 'My Rooms' : 'Rooms',
+                              ),
+                            );
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.work_outline),
+                          title: const Text('Jobs'),
+                          trailing: trailingCount(fmt(jobsCount)),
+                          onTap: () {
+                            if (profileUserId == null ||
+                                profileUserId.isEmpty) {
+                              closeAndNavigate(
+                                const JobsPage(enableAdzuna: false),
+                              );
+                              return;
+                            }
+                            closeAndNavigate(
+                              JobsPage(
+                                enableAdzuna: false,
+                                filterUserId: profileUserId,
+                                titleOverride: isSelf ? 'My Jobs' : 'Jobs',
+                              ),
+                            );
+                          },
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.shopping_bag_outlined),
+                          title: const Text('Buy & Sell'),
+                          subtitle: itemsSoldCount == null
+                              ? null
+                              : Text('Sold: ${fmt(itemsSoldCount)}'),
+                          trailing: trailingCount(fmt(itemsCount)),
+                          onTap: () {
+                            if (profileUserId == null ||
+                                profileUserId.isEmpty) {
+                              closeAndNavigate(const MarketplacePage());
+                              return;
+                            }
+                            closeAndNavigate(
+                              MarketplacePage(
+                                filterSellerId: profileUserId,
+                                titleOverride: isSelf
+                                    ? 'My Buy & Sell'
+                                    : 'Buy & Sell',
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _reportUser(BuildContext context) async {
+    final reportData = await showDialog<_ReportData>(
+      context: context,
+      builder: (context) => const _ReportUserDialog(),
+    );
+
+    if (reportData != null && context.mounted) {
+      try {
+        // Submit report to Firestore
+        await FirebaseFirestore.instance.collection('user_reports').add({
+          'reportedUserId': _profileUserId,
+          'reportedByUserId': AuthState.currentUserId,
+          'reason': reportData.reason,
+          'details': reportData.details,
+          'status': 'pending', // pending, reviewed, dismissed
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Report submitted successfully. Our team will review it within 24 hours.',
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to submit report: $e')),
+          );
+        }
+      }
+    }
+  }
+}
+
+class _ReportData {
+  final String reason;
+  final String details;
+
+  const _ReportData({required this.reason, required this.details});
+}
+
+class _ReportUserDialog extends StatefulWidget {
+  const _ReportUserDialog();
+
+  @override
+  State<_ReportUserDialog> createState() => _ReportUserDialogState();
+}
+
+class _ReportUserDialogState extends State<_ReportUserDialog> {
+  String? _selectedReason;
+  final TextEditingController _detailsController = TextEditingController();
+
+  static const List<String> _reportReasons = [
+    'Spam or unwanted content',
+    'Harassment or bullying',
+    'Inappropriate content',
+    'Fraud or scam',
+    'Fake account',
+    'Other',
+  ];
+
+  @override
+  void dispose() {
+    _detailsController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return AlertDialog(
+      title: const Text('Report User'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Help us keep the community safe by reporting inappropriate behavior.',
+              style: theme.textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Reason for report:',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ..._reportReasons.map(
+              (reason) =>
+                  // ignore: deprecated_member_use
+                  RadioListTile<String>(
+                    title: Text(reason),
+                    value: reason,
+                    groupValue:
+                        _selectedReason, // ignore: deprecated_member_use
+                    onChanged: (value) {
+                      // ignore: deprecated_member_use
+                      setState(() {
+                        _selectedReason = value;
+                      });
+                    },
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Additional details (optional):',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _detailsController,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Please provide any additional context or details...',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.all(12),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _selectedReason != null
+              ? () => Navigator.pop(
+                  context,
+                  _ReportData(
+                    reason: _selectedReason!,
+                    details: _detailsController.text.trim(),
+                  ),
+                )
+              : null,
+          child: const Text('Submit Report'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SelfHeader extends StatelessWidget {
+  final User user;
+  final ThemeData theme;
+  final List<String> badges;
+  final double? rating;
+  final int? ratingCount;
+  final VoidCallback onTapRating;
+  final DateTime joinedAt;
+  final Future<UserStats?> statsFuture;
+
+  const _SelfHeader({
+    required this.user,
+    required this.theme,
+    required this.badges,
+    required this.rating,
+    required this.ratingCount,
+    required this.onTapRating,
+    required this.joinedAt,
+    required this.statsFuture,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final yearsOnApp = DateTime.now().difference(joinedAt).inDays ~/ 365;
+    final location = user.location?.isNotEmpty == true
+        ? user.location!
+        : user.state?.isNotEmpty == true
+            ? '${user.state}, Australia'
+            : 'Australia';
+
+    return Column(
+      children: [
+        // Main profile card
+        Card(
+          elevation: 0,
+          color: Colors.grey.shade50,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Left side: Profile photo and name
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    children: [
+                      // Profile photo with verified badge
+                      Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 56,
+                            backgroundColor: theme.colorScheme.primaryContainer,
+                            backgroundImage: (user.profilePicture != null &&
+                                    user.profilePicture!.isNotEmpty)
+                                ? FileImage(File(user.profilePicture!))
+                                    as ImageProvider
+                                : null,
+                            child: (user.profilePicture == null ||
+                                    user.profilePicture!.isEmpty)
+                                ? Text(
+                                    user.name.isNotEmpty
+                                        ? user.name[0].toUpperCase()
+                                        : '?',
+                                    style: TextStyle(
+                                      fontSize: 44,
+                                      color:
+                                          theme.colorScheme.onPrimaryContainer,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  )
+                                : null,
+                          ),
+                          // Verified badge
+                          if (badges.contains('verified') ||
+                              badges.contains('trusted'))
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFE91E63),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check,
+                                  size: 18,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      // Name
+                      Text(
+                        user.name,
+                        style: theme.textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 4),
+                      // Location
+                      Text(
+                        location,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: Colors.grey.shade600,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 24),
+                // Right side: Stats
+                Expanded(
+                  flex: 2,
+                  child: FutureBuilder<UserStats?>(
+                    future: statsFuture,
+                    builder: (context, snap) {
+                      final s = snap.data;
+                      final totalListings = (s?.roomsPosted ?? 0) +
+                          (s?.jobsPosted ?? 0) +
+                          (s?.itemsForSale ?? 0);
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Listings stat
+                          _StatItem(
+                            value: totalListings.toString(),
+                            label: 'Listings',
+                          ),
+                          const Divider(height: 24),
+                          // Reviews stat
+                          InkWell(
+                            onTap: onTapRating,
+                            child: _StatItem(
+                              value: (ratingCount ?? 0).toString(),
+                              label: 'Reviews',
+                            ),
+                          ),
+                          const Divider(height: 24),
+                          // Years on app
+                          _StatItem(
+                            value: yearsOnApp < 1 ? '<1' : yearsOnApp.toString(),
+                            label: 'Years on HamroOZ',
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Two cards row: My Listings & Connections
+        FutureBuilder<UserStats?>(
+          future: statsFuture,
+          builder: (context, snap) {
+            final s = snap.data;
+            final hasListings = (s?.roomsPosted ?? 0) > 0 ||
+                (s?.jobsPosted ?? 0) > 0 ||
+                (s?.itemsForSale ?? 0) > 0;
+
+            return Row(
+              children: [
+                // My Listings card
+                Expanded(
+                  child: _FeatureCard(
+                    icon: Icons.list_alt_outlined,
+                    iconColor: Colors.blue.shade700,
+                    title: 'My Listings',
+                    showNewBadge: hasListings,
+                    onTap: () {
+                      // Will be handled by parent
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Connections card
+                Expanded(
+                  child: _FeatureCard(
+                    icon: Icons.people_outline,
+                    iconColor: Colors.deepOrange,
+                    title: 'Connections',
+                    showNewBadge: false,
+                    onTap: () {
+                      // Placeholder for future connections feature
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  final String value;
+  final String label;
+
+  const _StatItem({required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FeatureCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final bool showNewBadge;
+  final VoidCallback onTap;
+
+  const _FeatureCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.showNewBadge,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: iconColor, size: 24),
+                  ),
+                  if (showNewBadge)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo.shade400,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'NEW',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserCardPublicView extends StatelessWidget {
+  final User user;
+  final ThemeData theme;
+  final double? rating;
+  final int? ratingCount;
+  final VoidCallback onTapRating;
+  final VoidCallback onMessage;
+  final Future<void> Function() onCall;
+  final VoidCallback onProvideReview;
+  final VoidCallback onViewListings;
+  final VoidCallback onReport;
+
+  const _UserCardPublicView({
+    required this.user,
+    required this.theme,
+    required this.rating,
+    required this.ratingCount,
+    required this.onTapRating,
+    required this.onMessage,
+    required this.onCall,
+    required this.onProvideReview,
+    required this.onViewListings,
+    required this.onReport,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final publicName = (user.name.trim().split(' ').firstOrNull ?? user.name)
+        .trim();
+    final location = _suburbOnly(user.location);
+    final badges = <Widget>[];
+    if (user.badges.contains('verified')) {
+      badges.add(_badgeChip('Verified', Icons.verified_outlined));
+    }
+    if (user.badges.contains('phone_verified')) {
+      badges.add(_badgeChip('Phone verified', Icons.phone_iphone_outlined));
+    }
+    if (user.badges.contains('email_verified')) {
+      badges.add(_badgeChip('Email verified', Icons.email_outlined));
+    }
+    if (user.badges.contains('trusted')) {
+      badges.add(_badgeChip('Trusted', Icons.shield_outlined));
+    }
+    if (user.badges.contains('safe_lister')) {
+      badges.add(_badgeChip('Safe lister', Icons.security_outlined));
+    }
+    if (user.badges.contains('top_seller')) {
+      badges.add(_badgeChip('Top seller', Icons.emoji_events_outlined));
+    }
+    if (user.badges.contains('top_landlord')) {
+      badges.add(_badgeChip('Top landlord', Icons.home_outlined));
+    }
+    if (user.badges.contains('helpful_member')) {
+      badges.add(
+        _badgeChip('Helpful member', Icons.volunteer_activism_outlined),
+      );
+    }
+    if (user.badges.contains('new_user')) {
+      badges.add(_badgeChip('New user', Icons.fiber_new_outlined));
+    }
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Profile')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 36,
+                      backgroundColor: theme.colorScheme.primaryContainer,
+                      backgroundImage: (user.profilePicture != null &&
+                              user.profilePicture!.isNotEmpty)
+                          ? FileImage(File(user.profilePicture!))
+                              as ImageProvider
+                          : null,
+                      child: (user.profilePicture == null ||
+                              user.profilePicture!.isEmpty)
+                          ? Text(
+                              user.name.isNotEmpty
+                                  ? user.name[0].toUpperCase()
+                                  : '?',
+                              style: TextStyle(
+                                fontSize: 28,
+                                color: theme.colorScheme.onPrimaryContainer,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            publicName,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (location != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.location_on_outlined,
+                                  size: 16,
+                                  color: Color(0xFF6B7280),
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    location,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: const Color(0xFF6B7280),
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 8),
+                          InkWell(
+                            onTap: onTapRating,
+                            borderRadius: BorderRadius.circular(6),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.star,
+                                  color: Color(0xFFF59E0B),
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  rating == null
+                                      ? 'No reviews'
+                                      : '${rating!.toStringAsFixed(1)} (${ratingCount ?? 0})',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                    color: const Color(0xFF374151),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (badges.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Wrap(spacing: 8, runSpacing: 8, children: badges),
+            ],
+            const SizedBox(height: 20),
+            // Action buttons
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onMessage,
+                    icon: const Icon(Icons.message_outlined, size: 18),
+                    label: const Text('Message'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onCall,
+                    icon: const Icon(Icons.phone_outlined, size: 18),
+                    label: const Text('Call'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onProvideReview,
+                    icon: const Icon(Icons.rate_review_outlined, size: 18),
+                    label: const Text('Review'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onViewListings,
+                    icon: const Icon(Icons.list_alt_outlined, size: 18),
+                    label: const Text('Listings'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: onReport,
+              icon: const Icon(Icons.flag_outlined, size: 16),
+              label: const Text('Report User'),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _badgeChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: const Color(0xFF1D4ED8)),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1D4ED8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String? _suburbOnly(String? location) {
+                    const SizedBox(height: 6),
+                    Text(
+                      'You can’t edit badges manually. They update automatically based on account age, reviews, and safety signals.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF374151),
+                        height: 1.35,
+                      ),
+                    ),
+                    if (!badges.contains('trusted')) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Progress to Trusted',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF111827),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Account age: ${accountAgeDays.clamp(0, 30)}/30 days',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF6B7280),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Reviews received: ${(ratingCount ?? 0).clamp(0, 3)}/3',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: const Color(0xFF6B7280),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _infoRow(
+                    Icons.location_on_outlined,
+                    user.location?.isNotEmpty == true
+                        ? user.location!
+                        : 'Location not set',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: _infoRow(Icons.work_outline, user.role)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _infoRow(
+                    Icons.calendar_today_outlined,
+                    'Joined $joined',
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: InkWell(
+                    onTap: onTapRating,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: _infoRow(
+                        Icons.star_outline,
+                        rating == null
+                            ? 'No rating yet'
+                            : '${rating!.toStringAsFixed(1)} (${ratingCount ?? 0})',
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            FutureBuilder<UserStats?>(
+              future: statsFuture,
+              builder: (context, snap) {
+                final s = snap.data;
+                final rooms = s?.roomsPosted;
+                final jobs = s?.jobsPosted;
+                final sold = s?.itemsSold;
+
+                return Row(
+                  children: [
+                    Expanded(child: _stat('Rooms posted', rooms)),
+                    const SizedBox(width: 10),
+                    Expanded(child: _stat('Jobs posted', jobs)),
+                    const SizedBox(width: 10),
+                    Expanded(child: _stat('Items sold', sold)),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stat(String label, int? value) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value == null ? '—' : value.toString(),
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(label, style: theme.textTheme.bodySmall),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: const Color(0xFF6B7280)),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: const Color(0xFF374151),
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _badgeChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: const Color(0xFF1D4ED8)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1D4ED8),
+            ),
+          ),
+        ],
+      ),
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  final String value;
+  final String label;
+
+  const _StatItem({required this.value, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade600,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FeatureCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final bool showNewBadge;
+  final VoidCallback onTap;
+
+  const _FeatureCard({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.showNewBadge,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: iconColor, size: 24),
+                  ),
+                  if (showNewBadge)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo.shade400,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'NEW',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserCardPublicView extends StatelessWidget {
+  final User user;
+  final ThemeData theme;
+  final double? rating;
+  final int? ratingCount;
+  final VoidCallback onTapRating;
+  final VoidCallback onMessage;
+  final Future<void> Function() onCall;
+  final VoidCallback onProvideReview;
+  final VoidCallback onViewListings;
+  final VoidCallback onReport;
+
+  const _UserCardPublicView({
+    required this.user,
+    required this.theme,
+    required this.rating,
+    required this.ratingCount,
+    required this.onTapRating,
+    required this.onMessage,
+    required this.onCall,
+    required this.onProvideReview,
+    required this.onViewListings,
+    required this.onReport,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final publicName = (user.name.trim().split(' ').firstOrNull ?? user.name)
+        .trim();
+    final location = _suburbOnly(user.location);
+    final badges = <Widget>[];
+    if (user.badges.contains('verified')) {
+      badges.add(_badgeChip('Verified', Icons.verified_outlined));
+    }
+    if (user.badges.contains('phone_verified')) {
+      badges.add(_badgeChip('Phone verified', Icons.phone_iphone_outlined));
+    }
+    if (user.badges.contains('email_verified')) {
+      badges.add(_badgeChip('Email verified', Icons.email_outlined));
+    }
+    if (user.badges.contains('trusted')) {
+      badges.add(_badgeChip('Trusted', Icons.shield_outlined));
+    }
+    if (user.badges.contains('safe_lister')) {
+      badges.add(_badgeChip('Safe lister', Icons.security_outlined));
+    }
+    if (user.badges.contains('top_seller')) {
+      badges.add(_badgeChip('Top seller', Icons.emoji_events_outlined));
+    }
+    if (user.badges.contains('top_landlord')) {
+      badges.add(_badgeChip('Top landlord', Icons.home_outlined));
+    }
+    if (user.badges.contains('helpful_member')) {
+      badges.add(
+        _badgeChip('Helpful member', Icons.volunteer_activism_outlined),
+      );
+    }
+    if (user.badges.contains('new_user')) {
+      badges.add(_badgeChip('New user', Icons.fiber_new_outlined));
+    }
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Profile')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: theme.colorScheme.primaryContainer,
+                      child: Text(
+                        publicName.isNotEmpty
+                            ? publicName[0].toUpperCase()
+                            : '?',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: theme.colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            publicName,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            [
+                              location,
+                              user.role,
+                            ].where((x) => x.trim().isNotEmpty).join(' • '),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: const Color(0xFF6B7280),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(spacing: 8, runSpacing: 8, children: badges),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'About',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      (user.bio ?? '').trim().isEmpty
+                          ? 'No bio provided.'
+                          : user.bio!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF374151),
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Member since ${user.createdAt.year}',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFF6B7280),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: onTapRating,
+                            borderRadius: BorderRadius.circular(12),
+                            child: _infoPill(
+                              icon: Icons.star_outline,
+                              text: rating == null
+                                  ? 'No rating'
+                                  : '${rating!.toStringAsFixed(1)} (${ratingCount ?? 0})',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _infoPill(
+                            icon: Icons.shopping_bag_outlined,
+                            text: 'Listings',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onMessage,
+                    icon: const Icon(Icons.message_outlined, size: 18),
+                    label: const Text('Message User'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed:
+                        user.showPhone && (user.phone ?? '').trim().isNotEmpty
+                        ? onCall
+                        : null,
+                    icon: const Icon(Icons.call_outlined, size: 18),
+                    label: const Text('Call'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onProvideReview,
+                    icon: const Icon(Icons.rate_review_outlined, size: 18),
+                    label: const Text('Provide review'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onViewListings,
+                    icon: const Icon(Icons.list_alt_outlined, size: 18),
+                    label: const Text('View Listings'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: onReport,
+              icon: const Icon(Icons.report_outlined, size: 18),
+              label: const Text('Report User'),
+              style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _suburbOnly(String? raw) {
+    final v = (raw ?? '').trim();
+    if (v.isEmpty) return '';
+    final parts = v.split(',');
+    return parts.first.trim();
+  }
+
+  Widget _badgeChip(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFECFDF5),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFBBF7D0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: const Color(0xFF047857)),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF047857),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoPill({required IconData icon, required String text}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: const Color(0xFF6B7280)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF374151),
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+extension _FirstOrNull<E> on List<E> {
+  E? get firstOrNull => isEmpty ? null : first;
+}

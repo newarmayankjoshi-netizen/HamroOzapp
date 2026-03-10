@@ -1,0 +1,56 @@
+--- a/macos/Podfile
++++ b/macos/Podfile
+@@
+		 target.build_configurations.each do |config|
+			 config.build_settings['MACOSX_DEPLOYMENT_TARGET'] = '10.15'
+@@
+-    flutter_additional_macos_build_settings(target)
++    # Ensure plugin targets don't add duplicate explicit -lc++ flags which
++    # cause "ignoring duplicate libraries: '-lc++'" linker warnings.
++    target.build_configurations.each do |config|
++      existing_ldflags = config.build_settings['OTHER_LDFLAGS']
++      if existing_ldflags
++        flags = case existing_ldflags
++                when Array
++                  existing_ldflags
++                when String
++                  existing_ldflags.split(' ')
++                else
++                  []
++                end
++        # remove any explicit -lc++ occurrences
++        flags = flags.reject { |f| f.strip == '-lc++' }
++        config.build_settings['OTHER_LDFLAGS'] = flags.join(' ') unless flags.empty?
++      end
++    end
++    flutter_additional_macos_build_settings(target)
+	 end
+ end
+
+--- a/macos/Runner/Configs/Debug.xcconfig
++++ b/macos/Runner/Configs/Debug.xcconfig
+@@
+ #include? "../../Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+ #include "AppInfo.xcconfig"
+ #include "../../Flutter/Flutter-Debug.xcconfig"
+ #include "Warnings.xcconfig"
+@@
+ 
+--- a/macos/Runner/Configs/Release.xcconfig
++++ b/macos/Runner/Configs/Release.xcconfig
+@@
+ #include? "../../Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+ #include "AppInfo.xcconfig"
+ #include "../../Flutter/Flutter-Release.xcconfig"
+ #include "Warnings.xcconfig"
+@@
+ 
+--- a/macos/Runner/Configs/Profile.xcconfig
++++ b/macos/Runner/Configs/Profile.xcconfig
+@@
+ #include? "../../Pods/Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"
+ #include "AppInfo.xcconfig"
+ #include "../../Flutter/Flutter-Release.xcconfig"
+ #include "Warnings.xcconfig"
+@@
+ 

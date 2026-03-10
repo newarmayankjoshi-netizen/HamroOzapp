@@ -1,0 +1,17 @@
+// Sample Australian public holidays for all states (partial, extend as needed)
+[
+  {"date": "2026-01-01", "name": "New Year's Day", "states": ["All"]},
+  {"date": "2026-01-26", "name": "Australia Day", "states": ["All"]},
+  {"date": "2026-03-09", "name": "Labour Day", "states": ["VIC", "TAS"]},
+  {"date": "2026-03-09", "name": "Adelaide Cup Day", "states": ["SA"]},
+  {"date": "2026-03-09", "name": "Canberra Day", "states": ["ACT"]},
+  {"date": "2026-03-09", "name": "Eight Hours Day", "states": ["TAS"]},
+  {"date": "2026-03-09", "name": "Labour Day", "states": ["WA"]},
+  {"date": "2026-03-27", "name": "Good Friday", "states": ["All"]},
+  {"date": "2026-03-28", "name": "Holy Saturday", "states": ["VIC", "TAS", "SA", "NT"]},
+  {"date": "2026-03-29", "name": "Easter Sunday", "states": ["All"]},
+  {"date": "2026-03-30", "name": "Easter Monday", "states": ["All"]},
+  {"date": "2026-04-25", "name": "ANZAC Day", "states": ["All"]},
+  {"date": "2026-12-25", "name": "Christmas Day", "states": ["All"]},
+  {"date": "2026-12-26", "name": "Boxing Day", "states": ["All"]}
+]

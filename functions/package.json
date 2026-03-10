@@ -1,0 +1,15 @@
+{
+  "name": "nepal-australia-functions",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^4.7.0",
+    "@google-cloud/vision": "^2.4.0"
+    ,
+    "@sendgrid/mail": "^7.7.0"
+  }
+}

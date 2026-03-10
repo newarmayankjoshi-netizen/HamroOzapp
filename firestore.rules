@@ -1,0 +1,247 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // -----------------------------
+    // Helper functions
+    // -----------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // TEMP: Keep a short-lived window for development while the app is not yet
+    // consistently using Firebase Auth for all flows.
+    // Update this date (or remove this function) once auth-based rules are in place.
+    function isDevWriteWindowOpen() {
+      return request.time < timestamp.date(2026, 3, 31);
+    }
+
+    // We currently store ownerUserId as a "stable owner key".
+    // In the Firebase-backed path, prefer UID; we also allow email-based ownership
+    // while the app is still bridging from the existing login.
+
+    // Returns the authenticated user's email (if available).
+    function userEmail() {
+      return request.auth.token.email;
+    }
+
+    // Returns true when the authenticated principal owns the given resource
+    // object (which should contain an `ownerUserId` field that may be either
+    // a UID or an email address depending on migration state).
+    function isOwner(doc) {
+      return isSignedIn() && (
+        doc.ownerUserId == request.auth.uid ||
+        (userEmail() != null && doc.ownerUserId == userEmail())
+      );
+    }
+
+    // -----------------------------
+    // Community content (Jobs / Events / Marketplace / Rooms)
+    // -----------------------------
+    // These collections are used by the Flutter app pages that were migrated to Firestore.
+    // For now:
+    // - Reads are public (the app is a community browse experience)
+    // - Writes are allowed only during a temporary dev window
+    // Tighten later by:
+    // - Using Firebase Auth and storing an owner UID (e.g. createdByUid/sellerUid)
+    // - Restricting update/delete to owners
+
+    match /community_jobs/{jobId} {
+      allow read: if true;
+      allow write: if isDevWriteWindowOpen();
+    }
+
+    match /community_events/{eventId} {
+      allow read: if true;
+      allow write: if isDevWriteWindowOpen();
+    }
+
+    match /marketplace_items/{itemId} {
+      allow read: if true;
+      allow write: if isDevWriteWindowOpen();
+    }
+
+    match /community_rooms/{roomId} {
+      allow read: if true;
+      allow write: if isDevWriteWindowOpen();
+    }
+
+    // -----------------------------
+    // Users & Reviews (system-managed badges)
+    // -----------------------------
+    match /users/{userId} {
+      allow read: if true;
+
+      // During dev window, allow profile writes but never allow clients to
+      // create/update system-managed fields like badges.
+      allow create: if isDevWriteWindowOpen() && !request.resource.data.keys().hasAny(['badges']);
+      allow update: if isDevWriteWindowOpen() && (
+        !request.resource.data.keys().hasAny(['badges']) ||
+        request.resource.data.badges == resource.data.badges
+      );
+      allow delete: if false;
+    }
+
+    // Identity verification submissions (per-user subcollection)
+    match /users/{userId}/id_submissions/{submissionId} {
+      // Owners may read their own submissions. Admins and verifiers (via custom
+      // claims) may also read all submissions.
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId ||
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'Admin' ||
+        request.auth.token.role == 'Verifier'
+      );
+
+      // Users may create their own submission documents. Basic field checks
+      // prevent clients from setting system-managed fields.
+      allow create: if isSignedIn() && request.auth.uid == userId &&
+        request.resource.data.type is string &&
+        request.resource.data.imageUrl is string &&
+        request.resource.data.status == 'pending';
+
+      // Only admins / verifiers (server-side reviewers) may update status or
+      // reviewer fields. Users cannot modify review results.
+      allow update: if isSignedIn() && (
+        request.auth.token.admin == true ||
+        request.auth.token.role == 'Admin' ||
+        request.auth.token.role == 'Verifier'
+      );
+
+      allow delete: if false;
+    }
+
+    match /users/{userId}/expense_splits/{splitId} {
+      allow read, create, update, delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /visa_tracker/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /user_reviews/{reviewId} {
+      allow read: if true;
+
+      // Keep this permissive only during the dev window until Firebase Auth
+      // is fully enforced in-app.
+      allow create: if isDevWriteWindowOpen();
+      allow update, delete: if false;
+    }
+
+    // -----------------------------
+    // Messages (user-to-user communication)
+    // -----------------------------
+    match /messages/{messageId} {
+      // Allow read access during dev window, then restrict to authenticated users
+      allow read: if isDevWriteWindowOpen() || (
+        isSignedIn() && (
+          resource.data.senderId == request.auth.uid ||
+          resource.data.recipientId == request.auth.uid ||
+          (userEmail() != null && (resource.data.senderId == userEmail() || resource.data.recipientId == userEmail()))
+        )
+      );
+      allow create: if isDevWriteWindowOpen() || (
+        isSignedIn() && (
+          request.resource.data.senderId == request.auth.uid ||
+          (userEmail() != null && request.resource.data.senderId == userEmail())
+        )
+      );
+      allow update: if isDevWriteWindowOpen() || (
+        isSignedIn() && (
+          resource.data.recipientId == request.auth.uid ||
+          (userEmail() != null && resource.data.recipientId == userEmail())
+        )
+      );
+      allow delete: if false; // Messages cannot be deleted
+    }
+
+    match /owner_restaurants/{restaurantId} {
+      allow create: if isSignedIn() && (
+        request.resource.data.ownerUserId == request.auth.uid ||
+          (userEmail() != null && request.resource.data.ownerUserId == userEmail())
+      );
+
+      allow read, update, delete: if isOwner(resource.data);
+    }
+
+    // User reports - allow authenticated users to create reports, authenticated users to read/update/delete (admin check in app)
+    match /user_reports/{reportId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn(); // Application handles admin check
+      allow update: if isSignedIn(); // Application handles admin check
+      allow delete: if isSignedIn(); // Application handles admin check - only allow deleting dismissed reports
+    }
+
+    // Bookmarks: allow users to manage their own bookmarks privately.
+    match /bookmarks/{bookmarkId} {
+      // Only the owner may read their bookmarks.
+      allow read: if isSignedIn() && request.auth.uid == resource.data.userId;
+
+      // Users may create bookmarks that belong to themselves. Basic type checks
+      // ensure targetType/targetId are strings. We do NOT require the client to
+      // provide a concrete `createdAt` timestamp because clients commonly use
+      // `FieldValue.serverTimestamp()` which is resolved on the server and may
+      // not appear as a timestamp in `request.resource` during rules evaluation.
+      // Enforce owner-only create: client must set `userId` equal to their uid
+      // and provide `targetType`/`targetId` strings. This prevents clients from
+      // creating bookmarks on behalf of other users.
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.targetType is string
+        && request.resource.data.targetId is string;
+
+      // No client-side updates allowed (recreate/remove instead).
+      allow update: if false;
+
+      // Allow deletion only by the owner.
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // -----------------------------
+    // User Follows (follower/following relationships)
+    // -----------------------------
+    // Document ID format: {followerId}_{followedId}
+    match /user_follows/{followId} {
+      // Anyone can read follow relationships (for follower counts, etc.)
+      allow read: if true;
+
+      // Users can create follows where they are the follower
+      allow create: if isSignedIn()
+        && request.resource.data.followerId == request.auth.uid
+        && request.resource.data.followedId is string
+        && request.resource.data.followerId != request.resource.data.followedId;
+
+      // Users can update their own follow settings (e.g., notifyOnNewListing)
+      allow update: if isSignedIn()
+        && resource.data.followerId == request.auth.uid
+        && request.resource.data.followerId == resource.data.followerId
+        && request.resource.data.followedId == resource.data.followedId;
+
+      // Users can delete (unfollow) relationships they created
+      allow delete: if isSignedIn() && resource.data.followerId == request.auth.uid;
+    }
+
+    // -----------------------------
+    // In-App Notifications (per-user subcollection)
+    // -----------------------------
+    match /notifications/{userId}/user_notifications/{notificationId} {
+      // Users can only read their own notifications
+      allow read: if isSignedIn() && request.auth.uid == userId;
+
+      // Only Cloud Functions (admin SDK) should create notifications
+      // But allow during dev window for testing
+      allow create: if isDevWriteWindowOpen();
+
+      // Users can update their own notifications (mark as read)
+      allow update: if isSignedIn() && request.auth.uid == userId;
+
+      // Users can delete their own notifications
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Default: deny everything else.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
