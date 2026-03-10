@@ -1,0 +1,90 @@
+{
+  "project_info": {
+    "project_number": "193815213316",
+    "project_id": "nepalese-in-australia",
+    "storage_bucket": "nepalese-in-australia.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:193815213316:android:6b91fa83403a802a284c51",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "193815213316-4v4287tk6ehb2670l2uit2bbfo56ts24.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.flutter_application_1",
+            "certificate_hash": "386fd77ac8aa236a919379cd7eacb16aeeef91a8"
+          }
+        },
+        {
+          "client_id": "193815213316-efvpe9tfq97s9no5b2ltumd9ol105pkq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA7vAzFs_rCJH-sHRzoNfW_77iZ-EBnGAA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "193815213316-efvpe9tfq97s9no5b2ltumd9ol105pkq.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "193815213316-pl1nn67hcjs17i39efih0n7r9b96j48d.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.mayank.nepalesinaustralia"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:193815213316:android:62f8adaf2d778705284c51",
+        "android_client_info": {
+          "package_name": "com.mayank.nepaleseinaustralia"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "193815213316-efvpe9tfq97s9no5b2ltumd9ol105pkq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA7vAzFs_rCJH-sHRzoNfW_77iZ-EBnGAA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "193815213316-efvpe9tfq97s9no5b2ltumd9ol105pkq.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "193815213316-pl1nn67hcjs17i39efih0n7r9b96j48d.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.mayank.nepalesinaustralia"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
