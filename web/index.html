@@ -20,6 +20,32 @@
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="google-signin-client_id" content="193815213316-4v4287tk6ehb2670l2uit2bbfo56ts24.apps.googleusercontent.com">
 
+  <!-- Firebase JS SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics-compat.js"></script>
+  <script>
+    // Your web app's Firebase configuration (added by assistant)
+    var firebaseConfig = {
+      apiKey: "AIzaSyDvtshXBWKbAHNh56FC38OwnvSy6WZmVL0",
+      authDomain: "nepalese-in-australia.firebaseapp.com",
+      projectId: "nepalese-in-australia",
+      storageBucket: "nepalese-in-australia.firebasestorage.app",
+      messagingSenderId: "193815213316",
+      appId: "1:193815213316:web:57c7fb631484508e284c51",
+      measurementId: "G-VQ82EJ3EYE"
+    };
+    // Initialize Firebase
+    try {
+      firebase.initializeApp(firebaseConfig);
+      if (firebase.analytics) {
+        firebase.analytics();
+      }
+    } catch (e) {
+      console.warn('Firebase initialization error', e);
+    }
+  </script>
+
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">

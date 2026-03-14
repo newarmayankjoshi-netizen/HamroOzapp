@@ -4,6 +4,24 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'services/firebase_bootstrap.dart';
 
+// Small helpers to extract concise fields from OCR fullText for reviewer cards
+String _ocrFirstLineReview(String s) {
+  final lines = s.split(RegExp(r'[\r\n]+')).map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+  return lines.isEmpty ? '' : lines.first;
+}
+
+String? _ocrFindIdReview(String s) {
+  final m = RegExp(r'([A-Z0-9]{6,20})').firstMatch(s.replaceAll(RegExp(r'\s+'), ''));
+  return m?.group(0);
+}
+
+String? _ocrFindDateReview(String s) {
+  final m1 = RegExp(r'(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})').firstMatch(s);
+  if (m1 != null) return m1.group(0);
+  final m2 = RegExp(r'(\d{1,2}\s+[A-Za-z]{3,}\s+\d{4})').firstMatch(s);
+  return m2?.group(0);
+}
+
 class AdminVerificationReviewPage extends StatefulWidget {
   final String userId;
   final String submissionId;
@@ -212,17 +230,60 @@ class _AdminVerificationReviewPageState extends State<AdminVerificationReviewPag
                     Card(
                       clipBehavior: Clip.antiAlias,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      child: AspectRatio(aspectRatio: 4 / 3, child: Image.network(_submission!['imageUrl'], fit: BoxFit.cover)),
+                      child: AspectRatio(
+                        aspectRatio: 4 / 3,
+                        child: Image.network(
+                          _submission!['imageUrl'],
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            debugPrint('Verification image failed to load: $error');
+                            return const Center(child: Icon(Icons.broken_image, size: 48, color: Colors.grey));
+                          },
+                        ),
+                      ),
                     ),
                   const SizedBox(height: 12),
                   if (_submission!['ocr'] != null)
-                    Expanded(
-                      child: SingleChildScrollView(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const Text('OCR excerpt', style: TextStyle(fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 8),
-                          SelectableText((_submission!['ocr']['fullText'] ?? '').toString()),
-                        ]),
+                    Card(
+                      clipBehavior: Clip.antiAlias,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 240),
+                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            const Text('OCR excerpt', style: TextStyle(fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 8),
+                            Builder(builder: (ctx) {
+                              final full = (_submission!['ocr']['fullText'] ?? '').toString();
+                              final name = _ocrFirstLineReview(full);
+                              final id = _ocrFindIdReview(full);
+                              final dob = _ocrFindDateReview(full);
+                              final hasAny = name.isNotEmpty || id != null || dob != null;
+                              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                if (hasAny) ...[
+                                  if (name.isNotEmpty) Text('Name: $name', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                  if (id != null) Text('ID: $id'),
+                                  if (dob != null) Text('DOB: $dob'),
+                                ] else ...[
+                                  Text(full.length > 200 ? '${full.substring(0, 200)}…' : full, maxLines: 6, overflow: TextOverflow.ellipsis),
+                                ],
+                                const SizedBox(height: 8),
+                                TextButton(
+                                  onPressed: () => showDialog<void>(
+                                    context: context,
+                                    builder: (dctx) => AlertDialog(
+                                      title: const Text('Full OCR'),
+                                      content: SingleChildScrollView(child: SelectableText(full)),
+                                      actions: [TextButton(onPressed: () => Navigator.of(dctx).pop(), child: const Text('Close'))],
+                                    ),
+                                  ),
+                                  child: const Text('View full OCR'),
+                                ),
+                              ]);
+                            }),
+                          ]),
+                        ),
                       ),
                     ),
                   if (_submission!['fraudChecks'] != null) ...[

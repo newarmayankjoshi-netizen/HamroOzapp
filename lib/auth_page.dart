@@ -8,13 +8,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:bcrypt/bcrypt.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'services/security_service.dart';
+import 'services/firebase_bootstrap.dart';
 import 'services/secure_storage_compat.dart';
 import 'widgets/app_logo.dart';
 import 'terms_of_service_page.dart';
@@ -575,6 +575,15 @@ class AuthService {
 
   static Future<User?> signInWithGoogle() async {
     try {
+      // Ensure Firebase is initialized (important for web)
+      await FirebaseBootstrap.tryInit();
+      if (!FirebaseBootstrap.isReady) {
+        throw Exception(
+          'Firebase is not configured for this platform.\n'
+          'On web, run `flutterfire configure --platforms=web` or add your Firebase config to `web/index.html`.\n'
+          'Alternatively use email/password sign-in for web development.'
+        );
+      }
       UserCredential userCredential;
 
       if (kIsWeb) {
@@ -584,23 +593,19 @@ class AuthService {
           googleProvider,
         );
       } else if (Platform.isMacOS) {
-        // For macOS, use google_sign_in package (v7.x API)
+        // macOS uses Desktop OAuth with client secret configured in Info.plist
         final GoogleSignIn googleSignIn = GoogleSignIn.instance;
 
         // Initialize Google Sign-In
         await googleSignIn.initialize();
 
-        // Authenticate the user
-        final GoogleSignInAccount googleUser = await googleSignIn
-            .authenticate();
-
-        // Removed always-false null check for googleUser
+        // Authenticate the user (this shows the account chooser)
+        final GoogleSignInAccount googleUser = await googleSignIn.authenticate();
 
         // Get authentication tokens (includes idToken)
         final GoogleSignInAuthentication googleAuth = googleUser.authentication;
 
         // For Firebase, we need both idToken and accessToken
-        // Try to get existing authorization first
         final List<String> scopes = [
           'https://www.googleapis.com/auth/userinfo.email',
           'https://www.googleapis.com/auth/userinfo.profile',
@@ -608,17 +613,12 @@ class AuthService {
 
         GoogleSignInClientAuthorization? authorization;
         try {
-          authorization = await googleUser.authorizationClient
-              .authorizationForScopes(scopes);
+          authorization = await googleUser.authorizationClient.authorizationForScopes(scopes);
         } catch (e) {
-          // If scopes not granted, request them
-          authorization = await googleUser.authorizationClient.authorizeScopes(
-            scopes,
-          );
+          authorization = await googleUser.authorizationClient.authorizeScopes(scopes);
         }
 
         if (authorization == null) {
-          // This shouldn't happen, but handle it just in case
           throw Exception('Failed to obtain authorization tokens');
         }
 
@@ -627,9 +627,7 @@ class AuthService {
           idToken: googleAuth.idToken,
         );
 
-        userCredential = await FirebaseAuth.instance.signInWithCredential(
-          credential,
-        );
+        userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
       } else {
         // For mobile (Android/iOS), use google_sign_in package to present account chooser
         final GoogleSignIn googleSignIn = GoogleSignIn.instance;
@@ -768,6 +766,15 @@ class AuthService {
   // Sign in with Apple
   static Future<User?> signInWithApple() async {
     try {
+      // Ensure Firebase is initialized (important for web)
+      await FirebaseBootstrap.tryInit();
+      if (!FirebaseBootstrap.isReady) {
+        throw Exception(
+          'Firebase is not configured for this platform.\n'
+          'On web, run `flutterfire configure --platforms=web` or add your Firebase config to `web/index.html`.\n'
+          'Alternatively use email/password sign-in for web development.'
+        );
+      }
       UserCredential userCredential;
 
       if (kIsWeb) {
@@ -779,21 +786,12 @@ class AuthService {
           appleProvider,
         );
       } else if (Platform.isMacOS) {
-        // For macOS, use sign_in_with_apple package
-        final appleCredential = await SignInWithApple.getAppleIDCredential(
-          scopes: [
-            AppleIDAuthorizationScopes.email,
-            AppleIDAuthorizationScopes.fullName,
-          ],
-        );
-
-        final AuthCredential credential = OAuthProvider('apple.com').credential(
-          idToken: appleCredential.identityToken,
-          accessToken: appleCredential.authorizationCode,
-        );
-
-        userCredential = await FirebaseAuth.instance.signInWithCredential(
-          credential,
+        // macOS Apple Sign-In requires proper code signing and entitlements.
+        // For local development without proper signing, use email/password sign-in.
+        throw Exception(
+          'Apple Sign-In on macOS requires Apple Developer code signing and entitlements. '
+          'Please use email/password sign-in for local development, '
+          'or set up proper code signing with an Apple Developer account.'
         );
       } else {
         // For mobile (Android/iOS), use signInWithProvider

@@ -9,6 +9,24 @@ import 'auth_page.dart';
 import 'services/firebase_bootstrap.dart';
 import 'admin_verification_review_page.dart';
 
+// Helpers to extract concise fields from OCR fullText
+String _ocrFirstLine(String s) {
+  final lines = s.split(RegExp(r'[\r\n]+')).map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+  return lines.isEmpty ? '' : lines.first;
+}
+
+String? _ocrFindId(String s) {
+  final m = RegExp(r'([A-Z0-9]{6,20})').firstMatch(s.replaceAll(RegExp(r'\s+'), ''));
+  return m?.group(0);
+}
+
+String? _ocrFindDate(String s) {
+  final m1 = RegExp(r'(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})').firstMatch(s);
+  if (m1 != null) return m1.group(0);
+  final m2 = RegExp(r'(\d{1,2}\s+[A-Za-z]{3,}\s+\d{4})').firstMatch(s);
+  return m2?.group(0);
+}
+
 class AdminDashboardPage extends StatefulWidget {
   const AdminDashboardPage({super.key});
 
@@ -459,8 +477,20 @@ class _VerificationsTabState extends State<VerificationsTab> {
               const SizedBox(height: 8),
               Text('Type: ${submission['type'] ?? 'unknown'}'),
               const SizedBox(height: 8),
-              if (submission['ocr'] != null)
-                Text('OCR excerpt: ${(submission['ocr']['fullText'] ?? '').toString().substring(0, (submission['ocr']['fullText'] ?? '').toString().length > 200 ? 200 : (submission['ocr']['fullText'] ?? '').toString().length)}'),
+                if (submission['ocr'] != null)
+                  Card(
+                    clipBehavior: Clip.antiAlias,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 240),
+                        child: SingleChildScrollView(
+                          child: SelectableText((submission['ocr']['fullText'] ?? '').toString()),
+                        ),
+                      ),
+                    ),
+                  ),
               const SizedBox(height: 12),
               const Text('Recent audits:'),
               const SizedBox(height: 8),
@@ -641,7 +671,48 @@ class _VerificationsTabState extends State<VerificationsTab> {
                                 const SizedBox(height: 8),
                                 if (data['imageUrl'] != null) Image.network(data['imageUrl'], height: 200, fit: BoxFit.contain),
                                 const SizedBox(height: 8),
-                                if (data['ocr'] != null) Text('OCR excerpt: ${(data['ocr']['fullText'] ?? '').toString().substring(0, (data['ocr']['fullText'] ?? '').toString().length > 200 ? 200 : (data['ocr']['fullText'] ?? '').toString().length)}'),
+                                if (data['ocr'] != null)
+                                  Card(
+                                    clipBehavior: Clip.antiAlias,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(8),
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(maxHeight: 140),
+                                        child: Builder(builder: (ctx) {
+                                          final full = (data['ocr']['fullText'] ?? '').toString();
+                                          final name = _ocrFirstLine(full);
+                                          final id = _ocrFindId(full);
+                                          final dob = _ocrFindDate(full);
+                                          final hasAny = name.isNotEmpty || id != null || dob != null;
+                                          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                            if (hasAny) ...[
+                                              if (name.isNotEmpty) Text('Name: $name', style: const TextStyle(fontWeight: FontWeight.w600)),
+                                              if (id != null) Text('ID: $id'),
+                                              if (dob != null) Text('DOB: $dob'),
+                                            ] else ...[
+                                              Text('OCR excerpt', style: Theme.of(context).textTheme.bodySmall),
+                                              const SizedBox(height: 6),
+                                              Text(full.length > 100 ? '${full.substring(0, 100)}…' : full, maxLines: 3, overflow: TextOverflow.ellipsis),
+                                            ],
+                                            const SizedBox(height: 6),
+                                            TextButton(
+                                              style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: const Size(40, 24)),
+                                              onPressed: () => showDialog<void>(
+                                                context: context,
+                                                builder: (dctx) => AlertDialog(
+                                                  title: const Text('Full OCR'),
+                                                  content: SingleChildScrollView(child: SelectableText(full)),
+                                                  actions: [TextButton(onPressed: () => Navigator.of(dctx).pop(), child: const Text('Close'))],
+                                                ),
+                                              ),
+                                              child: const Text('View full OCR'),
+                                            ),
+                                          ]);
+                                        }),
+                                      ),
+                                    ),
+                                  ),
                                 const SizedBox(height: 8),
                                 if (data['fraudChecks'] != null) Text('Fraud checks: ${data['fraudChecks'].toString()}'),
                                 const SizedBox(height: 8),

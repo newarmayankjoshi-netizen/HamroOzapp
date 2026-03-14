@@ -11,6 +11,7 @@ import 'rooms_page.dart';
 import 'services/user_stats_service.dart';
 import 'services/security_service.dart';
 import 'services/notification_service.dart';
+import 'services/in_app_notification_service.dart';
 import 'services/follow_service.dart';
 import 'settings_page.dart';
 import 'user_chat_page.dart';
@@ -545,7 +546,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 _previousSubmissionStatus != null &&
                 _previousSubmissionStatus != newStatus;
 
-            if (shouldNotify &&
+                if (shouldNotify &&
                 (newStatus == 'approved' ||
                     newStatus == 'rejected' ||
                     newStatus == 'auto_rejected')) {
@@ -558,15 +559,23 @@ class _ProfilePageState extends State<ProfilePage> {
 
               // Show an in-app SnackBar and a dialog so the user notices the change.
               if (mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(body)));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(body)));
                 // Also show a system/local notification so the user receives
                 // the update when the app is in background or not focused.
-                NotificationService().showNotification(
-                  title: title,
-                  body: body,
-                );
+                NotificationService().showNotification(title: title, body: body);
+
+                // Create an in-app (bell) notification entry so it appears in the
+                // user's notification list / bell icon.
+                try {
+                  InAppNotificationService.createNotification(
+                    recipientUserId: userId,
+                    type: newStatus == 'approved' ? NotificationType.verificationApproved : NotificationType.verificationRejected,
+                    title: title,
+                    body: body,
+                    data: {'submissionStatus': newStatus, 'reason': newReason ?? ''},
+                  );
+                } catch (_) {}
+
                 showDialog<void>(
                   context: context,
                   builder: (ctx) => AlertDialog(
@@ -582,16 +591,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         title: const Text('Bookmarks'),
                         onTap: () async {
                           Navigator.of(ctx).pop();
-                          await Future<void>.delayed(
-                            const Duration(milliseconds: 50),
-                          );
+                          await Future<void>.delayed(const Duration(milliseconds: 50));
                           if (!mounted) return;
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => const BookmarksPage(),
-                            ),
-                          );
+                          await Navigator.push(context, MaterialPageRoute(builder: (_) => const BookmarksPage()));
                         },
                       ),
                     ],
@@ -746,7 +748,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               const SizedBox(height: 16),
 
-              if (_showContributorCongrats && _isSelf)
+              if ((_showContributorCongrats || _latestSubmissionStatus == 'approved') && _isSelf)
                 Card(
                   color: Colors.green.shade50,
                   child: Padding(
@@ -773,9 +775,10 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                 ),
 
-              // Become a Contributor (only show if not already approved)
-              if (!(_showContributorCongrats ||
-                  _latestSubmissionStatus == 'approved'))
+                // Become a Contributor (only show if not already approved or pending)
+                if (!(_showContributorCongrats ||
+                  _latestSubmissionStatus == 'approved' ||
+                  _latestSubmissionStatus == 'pending'))
                 Padding(
                   padding: const EdgeInsets.only(top: 8, bottom: 8),
                   child: Card(
@@ -2024,22 +2027,26 @@ class _TrustedBadgeIndicator extends StatelessWidget {
         children: [
           Icon(Icons.verified, color: Colors.green.shade600, size: 24),
           const SizedBox(width: 8),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Trusted',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green.shade700,
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Trusted',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              Text(
-                'Verified member',
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-              ),
-            ],
+                Text(
+                  'Verified member',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
         ],
       );
@@ -2057,12 +2064,15 @@ class _TrustedBadgeIndicator extends StatelessWidget {
           children: [
             Icon(Icons.shield_outlined, color: Colors.grey.shade500, size: 20),
             const SizedBox(width: 6),
-            Text(
-              'Trusted Badge',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade700,
+            Flexible(
+              child: Text(
+                'Trusted Badge',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],

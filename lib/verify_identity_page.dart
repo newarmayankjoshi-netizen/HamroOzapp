@@ -1,12 +1,14 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:file_picker/file_picker.dart';
+
 import 'auth_page.dart';
 import 'services/verification_service.dart';
 import 'services/firebase_bootstrap.dart';
-import 'dart:async';
 
 class VerifyIdentityPage extends StatefulWidget {
   const VerifyIdentityPage({super.key});
@@ -44,6 +46,31 @@ class _VerifyIdentityPageState extends State<VerifyIdentityPage> {
       if (f != null) setState(() => _pickedFile = f);
     } catch (e) {
       setState(() => _error = 'Failed to pick image: $e');
+    }
+  }
+
+  Future<void> _pickFile() async {
+    setState(() {
+      _error = null;
+    });
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'svg'],
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      final filePath = result.files.first.path;
+      if (filePath == null) return setState(() => _error = 'Selected file is not available.');
+
+      final ext = filePath.split('.').last.toLowerCase();
+      const allowed = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'svg'];
+      if (!allowed.contains(ext)) return setState(() => _error = 'Unsupported file type. Allowed: PDF, JPG, PNG, WEBP, SVG.');
+
+      setState(() => _pickedFile = XFile(filePath));
+    } catch (e) {
+      setState(() => _error = 'Failed to pick file: $e');
     }
   }
 
@@ -138,18 +165,40 @@ class _VerifyIdentityPageState extends State<VerifyIdentityPage> {
               const Text('Document photo', style: TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               if (_pickedFile == null)
-                SizedBox(
-                  height: 160,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.camera_alt),
-                    label: const Text('Take Photo'),
-                    onPressed: _pickImage,
+                Column(children: [
+                  SizedBox(
+                    width: double.infinity,
+                    height: 88,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Take Photo'),
+                      onPressed: _pickImage,
+                    ),
                   ),
-                )
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 88,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.upload_file),
+                      label: const Text('Upload Document'),
+                      onPressed: _pickFile,
+                    ),
+                  ),
+                ])
               else
                 Column(children: [
-                  Image.file(File(_pickedFile!.path), height: 200, fit: BoxFit.contain),
-                  TextButton.icon(onPressed: _pickImage, icon: const Icon(Icons.edit), label: const Text('Retake')),
+                  if (_pickedFile!.path.toLowerCase().endsWith('.pdf'))
+                    ListTile(
+                      leading: const Icon(Icons.picture_as_pdf, size: 48),
+                      title: Text(_pickedFile!.name),
+                      subtitle: const Text('PDF selected'),
+                      trailing: TextButton.icon(onPressed: _pickFile, icon: const Icon(Icons.edit), label: const Text('Replace')),
+                    )
+                  else
+                    Image.file(File(_pickedFile!.path), height: 200, fit: BoxFit.contain),
+                  if (!_pickedFile!.path.toLowerCase().endsWith('.pdf'))
+                    TextButton.icon(onPressed: _pickImage, icon: const Icon(Icons.edit), label: const Text('Retake')),
                 ]),
 
               const SizedBox(height: 12),
