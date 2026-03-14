@@ -52,3 +52,9 @@ serviceAccount*.json
 
 # Specific functions key path (CI will write this file during deploy)
 /functions/serviceAccountKey.json
+
+# Firebase configuration files (contain API keys)
+lib/firebase_options.dart
+google-services.json
+**/google-services.json
+**/GoogleService-Info.plist

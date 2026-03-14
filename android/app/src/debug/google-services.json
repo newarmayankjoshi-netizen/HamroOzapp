@@ -51,9 +51,9 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:193815213316:android:62f8adaf2d778705284c51",
+        "mobilesdk_app_id": "1:193815213316:android:da11ab48ad0bac78284c51",
         "android_client_info": {
-          "package_name": "com.mayank.nepaleseinaustralia"
+          "package_name": "com.mayank.nepalesinaustralia"
         }
       },
       "oauth_client": [
