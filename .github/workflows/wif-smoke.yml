@@ -25,6 +25,7 @@ jobs:
         with:
           workload_identity_provider: "projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/${{ env.POOL_ID }}/providers/${{ env.PROVIDER_ID }}"
           service_account: "${{ env.SERVICE_ACCOUNT_EMAIL }}"
+          audience: "https://github.com/newarmayankjoshi-netizen/HamroOzapp"
 
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
