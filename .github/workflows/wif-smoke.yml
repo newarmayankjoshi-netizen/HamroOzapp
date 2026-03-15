@@ -1,0 +1,45 @@
+name: Workload Identity Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      PROJECT_ID: nepalese-in-australia
+      PROJECT_NUMBER: '193815213316'
+      POOL_ID: gha-pool
+      PROVIDER_ID: github-provider
+      SERVICE_ACCOUNT_EMAIL: 'firebase-adminsdk-fbsvc@nepalese-in-australia.iam.gserviceaccount.com'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud using Workload Identity
+        uses: google-github-actions/auth@v1
+        with:
+          workload_identity_provider: "projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/${{ env.POOL_ID }}/providers/${{ env.PROVIDER_ID }}"
+          service_account: "${{ env.SERVICE_ACCOUNT_EMAIL }}"
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Smoke test - list storage buckets
+        run: |
+          echo "Project: $PROJECT_ID"
+          gcloud storage buckets list --project="$PROJECT_ID" || true
+
+      - name: Run project smoke script (if present)
+        run: |
+          if [ -x ./ci/run_smoke_tests.sh ]; then
+            ./ci/run_smoke_tests.sh
+          else
+            echo "No smoke script found; add ./ci/run_smoke_tests.sh to run your app checks."
+          fi
